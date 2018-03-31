@@ -1,0 +1,164 @@
+##Loading the necessary packages
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+
+##loading the files from my computer
+test <- read.csv("C:/Users/Daniel Lopes/Documents/R/Machine Learning Project/pml-testing.csv",na.strings = c("NA", "#DIV/0!", ""))
+train <- read.csv("C:/Users/Daniel Lopes/Documents/R/Machine Learning Project/pml-training.csv",na.strings = c("NA", "#DIV/0!", ""))
+
+##removing N.A values 
+train <- train[, colSums(is.na(train)) == 0]
+test <- test[, colSums(is.na(test)) == 0] 
+
+##Evaluating the training set dimension
+dim(train)
+
+## [1] 19622    54
+
+
+##Transforming the Date and Time Stamp
+train$cvtd_timestamp<- as.Date(train$cvtd_timestamp, format = "%m/%d/%Y %H:%M")
+
+##Removing 
+trainRemove<- grepl("^X|timestamp|window", names(train))
+train<- train[, !trainRemove]
+testRemove<- grepl("^X|timestamp|window", names(test))
+test<- test[, !testRemove]
+
+##Evaluating the distribution of classes
+table(train$classe) 
+
+##   A    B    C    D    E 
+## 5580 3797 3422 3216 3607 
+
+##Evaluating the proportion of classes
+prop.table(table(train$classe)) 
+
+##       A         B         C         D         E 
+##0.2843747 0.1935073 0.1743961 0.1638977 0.1838243 
+
+##Evaluating the users
+prop.table(table(train$user_name)) 
+
+##   adelmo  carlitos   charles    eurico    jeremy   pedro
+## 0.1983488 0.1585975 0.1802059 0.1564570 0.1733768   0.1330140 
+ 
+
+##Evaluating the users 
+prop.table(table(train$user_name,train$classe),1) 
+ ##                A         B         C         D
+   ##adelmo   0.2993320 0.1993834 0.1927030 0.1323227
+   ##carlitos 0.2679949 0.2217224 0.1584190 0.1561697
+   ##charles  0.2542421 0.2106900 0.1524321 0.1815611
+   ##eurico   0.2817590 0.1928339 0.1592834 0.1895765
+   ##jeremy   0.3459730 0.1437390 0.1916520 0.1534392
+   ##pedro    0.2452107 0.1934866 0.1911877 0.1796935
+          
+   ##                 E
+   ##adelmo   0.1762590
+   ##carlitos 0.1956941
+   ##charles  0.2010747
+   ##eurico   0.1765472
+   ##jeremy   0.1651969
+   ##pedro    0.1904215
+
+prop.table(table(train$user_name,train$classe),2) 
+
+   ##              A         B         C         D
+  ## adelmo   0.2087814 0.2043719 0.2191701 0.1601368
+  ## carlitos 0.1494624 0.1817224 0.1440678 0.1511194
+  ## charles  0.1611111 0.1962075 0.1575102 0.1996269
+  ## eurico   0.1550179 0.1559126 0.1428989 0.1809701
+  ## jeremy   0.2109319 0.1287859 0.1905319 0.1623134
+  ## pedro    0.1146953 0.1329997 0.1458212 0.1458333
+          
+  ##                  E
+  ## adelmo   0.1901857
+  ## carlitos 0.1688384
+  ## charles  0.1971167
+  ## eurico   0.1502634
+  ## jeremy   0.1558082
+  ## pedro    0.1377876
+
+##Transforming into numeric
+trainCleaned<- train[, sapply(train, is.numeric)]
+testCleaned<- test[, sapply(test, is.numeric)]
+
+##Assingn factors
+classe<- train$classe
+trainCleaned$classe<- classe
+
+
+
+
+##Breaking the train dataset into two new sets, with the objective of prevent overfitng and better understending of the noise.
+set.seed(882231)
+inTrain <- createDataPartition(trainCleaned$classe, p=0.70, list=F)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[-inTrain, ]
+
+##seting control parametersand cross validation
+controlRf <- trainControl(method="cv", 5)
+
+##using randomForest method to fit the model is due to its abillity to exclude outliers and weight the variables so that latter we can pick the best model.
+##The importance of weighting the variables is shown when we train the algorthim. Beacause as the new signals and noise arrives, the weights change  
+rfmod<- train(classe ~., data=trainData, method="rf", trControl=controlRf, importance=TRUE, ntree=100)
+rfmod
+##Random Forest 
+
+##13737 samples
+  ## 52 predictor
+    ##5 classes: 'A', 'B', 'C', 'D', 'E' 
+
+##No pre-processing
+##Resampling: Cross-Validated (5 fold) 
+##Summary of sample sizes: 10990, 10990, 10990, 10990, 10988 
+##Resampling results across tuning parameters:
+
+##  mtry  Accuracy   Kappa    
+  ## 2    0.9898087  0.9871065
+  ##27    0.9904639  0.9879364
+  ##52    0.9815098  0.9766067
+
+##Accuracy was used to select the optimal model
+ ##using the largest value.
+##The final value used for the model was mtry = 27.
+
+
+##predcting the outcome with the randomForest model
+predictRfmod<- predict(rfmod, testData)
+##Notice that the "testData" is being predict uppon, and this particullary data set was created from the original train set
+
+##Ploting the confusion Matrix has the point of explicity showing the behavior of the randomForest model
+confusionMatrix(testData$classe, predictRfmod)
+
+
+##Notice that now we can determine the Sensitivity and Specificity of the model and evaluate the erros 
+
+##Evaluating the acuaracy of the model
+accuracy <- postResample(predictRfmod, testData$classe)
+accuracy
+
+##Evaluating the overall error of the model
+Error <- 1 - as.numeric(confusionMatrix(testData$classe, predictRfmod)$overall[1])
+Error
+
+##Predicting the results in the test set
+result <- predict(rfmod, testCleaned[, -length(names(testCleaned))])
+result
+##[1] B A B A A E D B A A B C B A E E A B B B
+
+##Notice that this is the original test set, the one extracted from the website
+
+##Better understanding of the outcome
+rtree<- rpart(classe ~ ., data=trainData, method="class")
+prp(rtree)
+##Notice that this decision tree shows all the paths that the algorithm used to predict the outcomes
+
+
